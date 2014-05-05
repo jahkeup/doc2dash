@@ -54,12 +54,35 @@ class SphinxParser(_BaseParser):
         else:
             return False
 
+    @classmethod
+    def maybe_add_index(self, url_or_path):
+        """When getting a path from the genindex, add the index if its a
+        trailing slash
+        """
+        if '/#' in url_or_path:
+            url = url_or_path.split('#')
+            return '#'.join([url[0] + 'index.html', url[1]])
+        return url_or_path
+
+    @classmethod
+    def flatten_if_relative(self, url_or_path):
+        """Flatten the relative link down a level when getting it from the
+        genindex, as one of the possible locations would introduce a
+        single level of relative path-yness.
+        """
+        if '../' in url_or_path:
+            return url_or_path[3:]
+        return url_or_path
+
+    @classmethod
+    def prepare_link(self, url):
+        return self.flatten_if_relative(self.maybe_add_index(url))
 
 POSSIBLE_INDEXES = [
+    'genindex/index.html',
     'genindex-all.html',
     'genindex.html',
 ]
-
 
 def _parse_soup(soup):
     log.info('Creating database...')
@@ -74,7 +97,7 @@ def _parse_soup(soup):
                         href = dt.a['href']
                         tmp_name = _url_to_name(href, type_)
                         if not tmp_name.startswith('index-'):
-                            yield tmp_name, type_, href
+                            yield tmp_name, type_, SphinxParser.prepare_link(href)
                     else:
                         name = _strip_annotation(dt.a.string)
                     dd = dt.next_sibling.next_sibling
@@ -97,6 +120,7 @@ def _strip_annotation(text):
 
 def _url_to_name(url, type_):
     """Certain types have prefixes in names we have to strip before adding."""
+    url = SphinxParser.prepare_link(url)
     if type_ == types.PACKAGE or type_ == types.CONSTANT and 'opcode-' in url:
         return url.split('#')[1][7:]
     else:
@@ -117,7 +141,7 @@ def _process_dd(name, dd):
                 type_ = _guess_type_by_name(name)
             full_name = _url_to_name(dt.a['href'], type_)
             if not full_name.startswith('index-'):
-                yield full_name, type_, dt.a['href']
+                yield full_name, type_, SphinxParser.prepare_link(dt.a['href'])
 
 
 def _guess_type_by_name(name):
